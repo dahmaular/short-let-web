@@ -16,7 +16,7 @@ import type { Property, ViewMode } from "../types";
 export default function ListingsPage() {
   const { state, dispatch } = useApp();
   const { navigate } = useRouter();
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState("recommended");
   const [localFilters, setLocalFilters] = useState({
@@ -237,8 +237,8 @@ export default function ListingsPage() {
                     className="w-full"
                   />
                   <div className="flex justify-between text-sm text-gray-600">
-                    <span>${localFilters.priceRange[0]}</span>
-                    <span>${localFilters.priceRange[1]}+</span>
+                    <span>₦{localFilters.priceRange[0]}</span>
+                    <span>₦{localFilters.priceRange[1]}+</span>
                   </div>
                 </div>
               </div>
@@ -510,7 +510,7 @@ function PropertyCard({
           <div className="flex items-center justify-between">
             <div>
               <span className="text-3xl font-bold text-gray-900">
-                ${property.price}
+                ₦{property.price}
               </span>
               <span className="text-gray-600"> / night</span>
             </div>
@@ -583,7 +583,7 @@ function PropertyCard({
         <div className="flex items-center justify-between">
           <div>
             <span className="text-2xl font-bold text-gray-900">
-              ${property.price}
+              ₦{property.price}
             </span>
             <span className="text-gray-600 text-sm"> / night</span>
           </div>

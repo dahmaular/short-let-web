@@ -455,9 +455,10 @@ export default function BookingPage() {
                   <div className="bg-gray-50 p-4 rounded-lg">
                     <p className="text-sm text-gray-600">
                       By selecting the button below, I agree to the Host's House
-                      Rules, Ground rules for guests, ShortLet's Rebooking and
-                      Refund Policy, and that ShortLet can charge my payment
-                      method if I'm responsible for damage.
+                      Rules, Ground rules for guests, Codakraft-apartment's
+                      Rebooking and Refund Policy, and that Codakraft-apartment
+                      can charge my payment method if I'm responsible for
+                      damage.
                     </p>
                   </div>
                 </div>
@@ -503,13 +504,13 @@ export default function BookingPage() {
               <div className="space-y-2 text-sm border-t border-gray-200 pt-4">
                 <div className="flex justify-between">
                   <span className="text-gray-600">
-                    ${property.price} x {nights} nights
+                    ₦{property.price} x {nights} nights
                   </span>
-                  <span className="text-gray-900">${subtotal}</span>
+                  <span className="text-gray-900">₦{subtotal}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Service fee</span>
-                  <span className="text-gray-900">${serviceFee}</span>
+                  <span className="text-gray-900">₦{serviceFee}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Cleaning fee</span>

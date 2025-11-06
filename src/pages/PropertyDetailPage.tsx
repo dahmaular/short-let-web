@@ -378,7 +378,7 @@ export default function PropertyDetailPage() {
               <div className="mb-6">
                 <div className="flex items-baseline gap-1 mb-2">
                   <span className="text-3xl font-bold text-gray-900">
-                    ${property.price}
+                    ₦{property.price}
                   </span>
                   <span className="text-gray-600">/ night</span>
                 </div>
@@ -509,25 +509,25 @@ export default function PropertyDetailPage() {
                 <div className="mb-6 space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">
-                      ${property.price} x {nights} nights
+                      ₦{property.price} x {nights} nights
                     </span>
                     <span className="text-gray-900">
-                      ${property.price * nights}
+                      ₦{property.price * nights}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Service fee</span>
                     <span className="text-gray-900">
-                      ${Math.round(property.price * nights * 0.14)}
+                      ₦{Math.round(property.price * nights * 0.14)}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Cleaning fee</span>
-                    <span className="text-gray-900">$75</span>
+                    <span className="text-gray-900">₦75</span>
                   </div>
                   <div className="border-t border-gray-300 pt-2 mt-2 flex justify-between font-semibold">
                     <span>Total</span>
-                    <span>${totalPrice}</span>
+                    <span>₦{totalPrice}</span>
                   </div>
                 </div>
               )}
@@ -584,7 +584,7 @@ export default function PropertyDetailPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="text-xl font-bold text-gray-900">
-                          ${p.price}
+                          ₦{p.price}
                         </span>
                         <span className="text-gray-600 text-sm"> / night</span>
                       </div>

@@ -41,7 +41,7 @@ export default function HostPage() {
       {/* Benefits */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
         <h2 className="text-4xl font-bold text-gray-900 mb-12 text-center">
-          Why Host with ShortLet?
+          Why Host with Codakraft-apartment?
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
           <div className="text-center">
@@ -52,7 +52,7 @@ export default function HostPage() {
               Earn Extra Income
             </h3>
             <p className="text-gray-600">
-              Average hosts earn $10,000+ per year. Set your own prices and
+              Average hosts earn ₦10,000,000+ per year. Set your own prices and
               availability.
             </p>
           </div>

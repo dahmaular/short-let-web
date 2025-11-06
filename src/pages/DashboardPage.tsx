@@ -168,7 +168,7 @@ export default function DashboardPage() {
                           <div className="flex items-center justify-between pt-4 border-t border-gray-200">
                             <div>
                               <span className="text-2xl font-bold text-gray-900">
-                                ${booking.totalPrice}
+                                ₦{booking.totalPrice}
                               </span>
                             </div>
                             <button
@@ -297,7 +297,7 @@ export default function DashboardPage() {
                         <div className="flex items-center justify-between">
                           <div>
                             <span className="text-xl font-bold text-gray-900">
-                              ${property.price}
+                              ₦{property.price}
                             </span>
                             <span className="text-gray-600 text-sm">
                               {" "}
