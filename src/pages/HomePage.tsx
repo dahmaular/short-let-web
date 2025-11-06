@@ -17,27 +17,8 @@ import { categories } from "../data/mockData";
 
 export default function HomePage() {
   const { navigate } = useRouter();
-  const { state, dispatch } = useApp();
+  const { state } = useApp();
   const [showVideoPlayer, setShowVideoPlayer] = useState(false);
-  const [searchData, setSearchData] = useState({
-    location: "",
-    checkIn: "",
-    checkOut: "",
-    guests: 1,
-  });
-
-  const handleSearch = () => {
-    dispatch({
-      type: "SET_SEARCH_FILTERS",
-      payload: {
-        location: searchData.location,
-        checkIn: searchData.checkIn,
-        checkOut: searchData.checkOut,
-        guests: searchData.guests,
-      },
-    });
-    navigate("listings");
-  };
 
   const featuredProperties = state.properties
     .filter((p) => p.featured)

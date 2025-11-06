@@ -15,7 +15,6 @@ import type { Property, ViewMode } from "../types";
 
 export default function ListingsPage() {
   const { state, dispatch } = useApp();
-  const { navigate } = useRouter();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState("recommended");
@@ -427,7 +426,7 @@ function PropertyCard({
 }) {
   const { navigate } = useRouter();
   const { state, dispatch } = useApp();
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [currentImageIndex] = useState(0);
 
   if (viewMode === "list") {
     return (
