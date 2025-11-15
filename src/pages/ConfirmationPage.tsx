@@ -1,30 +1,182 @@
-import { Check, Download, Mail, Calendar, MapPin } from "lucide-react";
-import { useApp } from "../context/AppContext";
+import { useState, useEffect } from "react";
+import {
+  Check,
+  Download,
+  Mail,
+  Calendar,
+  MapPin,
+  AlertCircle,
+} from "lucide-react";
 import { useRouter } from "../utils/router";
+import type { Property } from "../types";
+import { API_ENDPOINTS } from "../config/api";
+import { formatCurrency } from "../utils/helpers";
+
+interface BookingDetails {
+  _id: string;
+  property: string;
+  user: string;
+  checkIn: string;
+  checkOut: string;
+  guests: {
+    adults: number;
+    children: number;
+    infants: number;
+  };
+  guestDetails: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    specialRequests?: string;
+  };
+  pricing: {
+    basePrice: number;
+    cleaningFee: number;
+    serviceFee: number;
+    total: number;
+  };
+  status: string;
+  paystackReference?: string;
+}
 
 export default function ConfirmationPage() {
-  const { state } = useApp();
   const { navigate } = useRouter();
+  const [verifying, setVerifying] = useState(false);
+  const [verificationError, setVerificationError] = useState("");
+  const [property, setProperty] = useState<Property | null>(null);
+  const [bookingDetails, setBookingDetails] = useState<BookingDetails | null>(
+    null
+  );
 
-  const booking = state.currentBooking;
-  const property = booking?.propertyId
-    ? state.properties.find((p) => p.id === booking.propertyId)
-    : null;
+  // Get reference from URL - handles both hash and query params
+  const getReference = () => {
+    // Check hash-based query params (e.g., #/confirmation?reference=abc)
+    const hashParts = window.location.hash.split("?");
+    console.log("Hash Parts:", hashParts);
+    if (hashParts[1]) {
+      const hashParams = new URLSearchParams(hashParts[1]);
+      const ref = hashParams.get("reference");
+      if (ref) return ref;
+    }
 
-  const confirmedBooking = booking?.id
-    ? state.bookings.find((b) => b.id === booking.id)
-    : null;
+    // Check regular query params (e.g., ?reference=abc#/confirmation)
+    const searchParams = new URLSearchParams(window.location.search);
+    const ref = searchParams.get("reference");
+    if (ref) return ref;
 
-  if (!booking || !property || !confirmedBooking) {
+    // Check for 'trxref' which Paystack also uses
+    const trxref =
+      searchParams.get("trxref") ||
+      new URLSearchParams(hashParts[1] || "").get("trxref");
+    return trxref;
+  };
+
+  const reference = getReference();
+
+  useEffect(() => {
+    const verifyPayment = async () => {
+      if (!reference) {
+        console.log("No reference found. Full URL:", window.location.href);
+        console.log("Hash:", window.location.hash);
+        console.log("Search:", window.location.search);
+        setVerificationError("No payment reference found");
+        return;
+      }
+
+      try {
+        setVerifying(true);
+        setVerificationError("");
+
+        const response = await fetch(API_ENDPOINTS.verifyPayment(reference), {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || "Payment verification failed");
+        }
+
+        console.log("Payment verified:", data);
+        setBookingDetails(data.booking);
+
+        // Fetch property details
+        const propertyResponse = await fetch(
+          API_ENDPOINTS.propertyById(data.booking.property)
+        );
+        const propertyData = await propertyResponse.json();
+        if (propertyResponse.ok) {
+          setProperty(propertyData.property);
+        }
+      } catch (err) {
+        console.error("Verification error:", err);
+        setVerificationError(
+          err instanceof Error ? err.message : "Failed to verify payment"
+        );
+      } finally {
+        setVerifying(false);
+      }
+    };
+
+    verifyPayment();
+  }, [reference]);
+
+  if (!reference) {
     return (
       <div className="min-h-screen flex items-center justify-center pt-20">
         <div className="text-center">
+          <AlertCircle className="w-16 h-16 text-red-600 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-gray-900 mb-4">
-            Booking not found
+            Invalid Payment Reference
           </h2>
-          <button onClick={() => navigate("home")} className="btn-primary">
-            Go Home
+          <button onClick={() => navigate("listings")} className="btn-primary">
+            Browse Properties
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (verifying) {
+    return (
+      <div className="min-h-screen flex items-center justify-center pt-20">
+        <div className="text-center">
+          <div className="inline-block w-16 h-16 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-xl text-gray-600">Verifying your payment...</p>
+          <p className="text-sm text-gray-500 mt-2">Please wait</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (verificationError || !bookingDetails || !property) {
+    return (
+      <div className="min-h-screen flex items-center justify-center pt-20">
+        <div className="text-center max-w-md mx-auto px-4">
+          <AlertCircle className="w-16 h-16 text-red-600 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">
+            Payment Verification Failed
+          </h2>
+          <p className="text-gray-600 mb-6">
+            {verificationError || "Could not verify your payment"}
+          </p>
+          <div className="flex gap-4 justify-center">
+            <button
+              onClick={() => navigate("dashboard")}
+              className="btn-secondary"
+            >
+              Go to Dashboard
+            </button>
+            <button
+              onClick={() => navigate("listings")}
+              className="btn-primary"
+            >
+              Browse Properties
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -47,7 +199,7 @@ export default function ConfirmationPage() {
           <p className="text-lg text-gray-500 mt-2">
             Confirmation Number:{" "}
             <span className="font-semibold text-primary-600">
-              {confirmedBooking.id}
+              {bookingDetails._id}
             </span>
           </p>
         </div>
@@ -81,7 +233,7 @@ export default function ConfirmationPage() {
                       <span className="text-sm font-semibold">Check-in</span>
                     </div>
                     <p className="text-gray-900 font-semibold">
-                      {new Date(confirmedBooking.checkIn).toLocaleDateString(
+                      {new Date(bookingDetails.checkIn).toLocaleDateString(
                         "en-US",
                         {
                           weekday: "short",
@@ -100,7 +252,7 @@ export default function ConfirmationPage() {
                       <span className="text-sm font-semibold">Check-out</span>
                     </div>
                     <p className="text-gray-900 font-semibold">
-                      {new Date(confirmedBooking.checkOut).toLocaleDateString(
+                      {new Date(bookingDetails.checkOut).toLocaleDateString(
                         "en-US",
                         {
                           weekday: "short",
@@ -118,15 +270,15 @@ export default function ConfirmationPage() {
                   <div>
                     <p className="text-sm text-gray-600">Guests</p>
                     <p className="text-lg font-semibold text-gray-900">
-                      {(confirmedBooking.guests.adults || 0) +
-                        (confirmedBooking.guests.children || 0)}{" "}
+                      {(bookingDetails.guests.adults || 0) +
+                        (bookingDetails.guests.children || 0)}{" "}
                       guests
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-gray-600">Total Price</p>
                     <p className="text-2xl font-bold text-gray-900">
-                      ₦{confirmedBooking.totalPrice}
+                      {formatCurrency(bookingDetails.pricing.total)}
                     </p>
                   </div>
                 </div>
@@ -141,7 +293,7 @@ export default function ConfirmationPage() {
                 <p>
                   A confirmation email has been sent to{" "}
                   <span className="font-semibold text-gray-900">
-                    {confirmedBooking.guestDetails.email}
+                    {bookingDetails.guestDetails.email}
                   </span>
                 </p>
               </div>

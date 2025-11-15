@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -7,20 +7,41 @@ import {
   MapPin,
   Wifi,
   Share2,
-  Heart,
+  // Heart,
   Calendar,
   Shield,
+  Facebook,
+  Twitter,
+  Linkedin,
+  Mail,
+  Copy,
+  MessageCircle,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { useRouter } from "../utils/router";
-import { mockReviews } from "../data/mockData";
-import { calculateNights, calculateTotalPrice } from "../utils/helpers";
+import {
+  calculateNights,
+  calculateTotalPrice,
+  formatCurrency,
+} from "../utils/helpers";
+import type { Property, Review } from "../types";
+import Toast from "../components/Toast";
+import type { ToastType } from "../components/Toast";
+import { API_ENDPOINTS, config } from "../config/api";
 
 export default function PropertyDetailPage() {
-  const { state, dispatch } = useApp();
+  const { dispatch } = useApp();
   const { navigate, currentPropertyId } = useRouter();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [property, setProperty] = useState<Property | null>(null);
+  const [similarProperties, setSimilarProperties] = useState<Property[]>([]);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: ToastType;
+  } | null>(null);
   const [selectedDates, setSelectedDates] = useState({
     checkIn: "",
     checkOut: "",
@@ -30,19 +51,103 @@ export default function PropertyDetailPage() {
     children: 0,
     infants: 0,
   });
+  const [shareModalOpen, setShareModalOpen] = useState(false);
 
-  const property = state.properties.find((p) => p.id === currentPropertyId);
-  const reviews = mockReviews.filter((r) => r.propertyId === currentPropertyId);
+  // Clear any previous booking data when component mounts
+  useEffect(() => {
+    dispatch({
+      type: "SET_CURRENT_BOOKING",
+      payload: null,
+    });
+  }, [dispatch]);
 
-  if (!property) {
+  // Fetch property by ID from API
+  useEffect(() => {
+    const fetchProperty = async () => {
+      if (!currentPropertyId) {
+        setError("No property ID provided");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError("");
+
+        const response = await fetch(
+          API_ENDPOINTS.propertyById(currentPropertyId)
+        );
+        const data = await response.json();
+        console.log("Property data:", data);
+
+        if (!response.ok) {
+          throw new Error(data.message || "Failed to fetch property");
+        }
+
+        setProperty(data.property);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "An error occurred");
+        console.error("Error fetching property:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProperty();
+  }, [currentPropertyId]);
+
+  // Fetch similar properties when property is loaded
+  useEffect(() => {
+    const fetchSimilarProperties = async () => {
+      if (!property?.category) return;
+
+      try {
+        const params = new URLSearchParams();
+        params.append("category", property.category);
+        params.append("limit", "4");
+
+        const response = await fetch(
+          `${config.apiUrl}/api/properties?${params.toString()}`
+        );
+        const data = await response.json();
+
+        if (response.ok) {
+          // Filter out current property and limit to 3
+          const filtered = (data.properties || [])
+            .filter((p: Property) => p.id !== property.id)
+            .slice(0, 3);
+          setSimilarProperties(filtered);
+        }
+      } catch (err) {
+        console.error("Error fetching similar properties:", err);
+      }
+    };
+
+    fetchSimilarProperties();
+  }, [property?.id, property?.category]);
+
+  const reviews = property?.reviews || [];
+
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center pt-20">
+        <div className="text-center">
+          <div className="inline-block w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-gray-600 text-lg">Loading property...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !property) {
+    return (
+      <div className="min-h-screen flex items-center justify-center pt-20">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">
-            Property not found
+            {error || "Property not found"}
           </h2>
-          <button onClick={() => navigate("home")} className="btn-primary">
-            Go Home
+          <button onClick={() => navigate("listings")} className="btn-primary">
+            Back to Listings
           </button>
         </div>
       </div>
@@ -58,9 +163,78 @@ export default function PropertyDetailPage() {
     nights > 0 ? calculateTotalPrice(property.price, nights) : 0;
   const totalGuests = guestCount.adults + guestCount.children;
 
+  const handleShare = (platform: string) => {
+    const url = window.location.href;
+    const title = property?.title || "Check out this property";
+    const text = `${title} - ${property?.location.city}, ${property?.location.country}`;
+
+    const shareUrls = {
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+        url
+      )}`,
+      twitter: `https://twitter.com/intent/tweet?url=${encodeURIComponent(
+        url
+      )}&text=${encodeURIComponent(text)}`,
+      whatsapp: `https://wa.me/?text=${encodeURIComponent(text + " " + url)}`,
+      linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(
+        url
+      )}`,
+      email: `mailto:?subject=${encodeURIComponent(
+        title
+      )}&body=${encodeURIComponent(text + "\n\n" + url)}`,
+    };
+
+    if (platform === "copy") {
+      navigator.clipboard.writeText(url).then(() => {
+        setToast({
+          message: "Link copied to clipboard!",
+          type: "success",
+        });
+        setShareModalOpen(false);
+      });
+    } else {
+      window.open(
+        shareUrls[platform as keyof typeof shareUrls],
+        "_blank",
+        "width=600,height=400"
+      );
+      setShareModalOpen(false);
+    }
+  };
+
   const handleReserve = () => {
     if (!selectedDates.checkIn || !selectedDates.checkOut) {
-      alert("Please select check-in and check-out dates");
+      setToast({
+        message: "Please select check-in and check-out dates",
+        type: "warning",
+      });
+      return;
+    }
+
+    // Date validations
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Reset time to start of day for accurate comparison
+
+    const checkInDate = new Date(selectedDates.checkIn);
+    const checkOutDate = new Date(selectedDates.checkOut);
+
+    // Validate check-in date is not in the past
+    if (checkInDate < today) {
+      setToast({
+        message:
+          "Check-in date cannot be in the past. Please select a future date.",
+        type: "error",
+      });
+      return;
+    }
+
+    // Validate check-out date is after check-in date
+    if (checkOutDate <= checkInDate) {
+      setToast({
+        message:
+          "Check-out date must be after check-in date. Please select valid dates.",
+        type: "error",
+      });
       return;
     }
 
@@ -76,10 +250,6 @@ export default function PropertyDetailPage() {
     });
     navigate("booking");
   };
-
-  const similarProperties = state.properties
-    .filter((p) => p.id !== property.id && p.category === property.category)
-    .slice(0, 3);
 
   return (
     <div className="min-h-screen bg-white pt-20">
@@ -115,11 +285,14 @@ export default function PropertyDetailPage() {
           </div>
 
           <div className="flex items-center gap-3 mt-4 md:mt-0">
-            <button className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+            <button
+              onClick={() => setShareModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
               <Share2 className="w-4 h-4" />
               Share
             </button>
-            <button
+            {/* <button
               onClick={() =>
                 dispatch({ type: "TOGGLE_FAVORITE", payload: property.id })
               }
@@ -133,7 +306,7 @@ export default function PropertyDetailPage() {
                 }`}
               />
               Save
-            </button>
+            </button> */}
           </div>
         </div>
 
@@ -182,14 +355,14 @@ export default function PropertyDetailPage() {
             <div className="pb-8 border-b border-gray-200">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                  {/* <h2 className="text-2xl font-bold text-gray-900 mb-2">
                     {property.type === "entire-place"
                       ? "Entire place"
                       : property.type === "private-room"
                       ? "Private room"
                       : "Shared room"}{" "}
                     hosted by {property.host.name}
-                  </h2>
+                  </h2> */}
                   <div className="flex items-center gap-4 text-gray-600">
                     <span>{property.maxGuests} guests</span>
                     <span>·</span>
@@ -200,11 +373,11 @@ export default function PropertyDetailPage() {
                     <span>{property.bathrooms} baths</span>
                   </div>
                 </div>
-                <img
+                {/* <img
                   src={property.host.avatar}
                   alt={property.host.name}
                   className="w-16 h-16 rounded-full"
-                />
+                /> */}
               </div>
             </div>
 
@@ -318,13 +491,15 @@ export default function PropertyDetailPage() {
                               {key}
                             </span>
                             <span className="text-sm font-semibold">
-                              {value}
+                              {value as number}
                             </span>
                           </div>
                           <div className="h-1 bg-gray-200 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-gray-900"
-                              style={{ width: `${(value / 5) * 100}%` }}
+                              style={{
+                                width: `${((value as number) / 5) * 100}%`,
+                              }}
                             />
                           </div>
                         </div>
@@ -335,7 +510,7 @@ export default function PropertyDetailPage() {
               </div>
 
               <div className="space-y-6">
-                {reviews.map((review) => (
+                {reviews.map((review: Review) => (
                   <div
                     key={review.id}
                     className="border-b border-gray-200 pb-6 last:border-0"
@@ -378,7 +553,7 @@ export default function PropertyDetailPage() {
               <div className="mb-6">
                 <div className="flex items-baseline gap-1 mb-2">
                   <span className="text-3xl font-bold text-gray-900">
-                    ₦{property.price}
+                    {formatCurrency(property.price)}
                   </span>
                   <span className="text-gray-600">/ night</span>
                 </div>
@@ -401,6 +576,7 @@ export default function PropertyDetailPage() {
                     <input
                       type="date"
                       value={selectedDates.checkIn}
+                      min={new Date().toISOString().split("T")[0]}
                       onChange={(e) =>
                         setSelectedDates({
                           ...selectedDates,
@@ -417,6 +593,10 @@ export default function PropertyDetailPage() {
                     <input
                       type="date"
                       value={selectedDates.checkOut}
+                      min={
+                        selectedDates.checkIn ||
+                        new Date().toISOString().split("T")[0]
+                      }
                       onChange={(e) =>
                         setSelectedDates({
                           ...selectedDates,
@@ -509,25 +689,27 @@ export default function PropertyDetailPage() {
                 <div className="mb-6 space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">
-                      ₦{property.price} x {nights} nights
+                      {formatCurrency(property.price)} x {nights} nights
                     </span>
                     <span className="text-gray-900">
-                      ₦{property.price * nights}
+                      {formatCurrency(property.price * nights)}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Service fee</span>
                     <span className="text-gray-900">
-                      ₦{Math.round(property.price * nights * 0.14)}
+                      {formatCurrency(
+                        Math.round(property.price * nights * 0.14)
+                      )}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Cleaning fee</span>
-                    <span className="text-gray-900">₦75</span>
+                    <span className="text-gray-900">{formatCurrency(75)}</span>
                   </div>
                   <div className="border-t border-gray-300 pt-2 mt-2 flex justify-between font-semibold">
                     <span>Total</span>
-                    <span>₦{totalPrice}</span>
+                    <span>{formatCurrency(totalPrice)}</span>
                   </div>
                 </div>
               )}
@@ -584,7 +766,7 @@ export default function PropertyDetailPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="text-xl font-bold text-gray-900">
-                          ₦{p.price}
+                          {formatCurrency(p.price)}
                         </span>
                         <span className="text-gray-600 text-sm"> / night</span>
                       </div>
@@ -649,6 +831,132 @@ export default function PropertyDetailPage() {
             {lightboxIndex + 1} / {property.images.length}
           </div>
         </div>
+      )}
+
+      {/* Share Modal */}
+      {shareModalOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => setShareModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 max-w-md w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold text-gray-900">
+                Share this property
+              </h3>
+              <button
+                onClick={() => setShareModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <button
+                onClick={() => handleShare("facebook")}
+                className="flex flex-col items-center gap-2 p-4 border border-gray-200 rounded-lg hover:border-primary-600 hover:bg-primary-50 transition-colors group"
+              >
+                <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Facebook className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-sm text-gray-700 font-medium">
+                  Facebook
+                </span>
+              </button>
+
+              <button
+                onClick={() => handleShare("twitter")}
+                className="flex flex-col items-center gap-2 p-4 border border-gray-200 rounded-lg hover:border-primary-600 hover:bg-primary-50 transition-colors group"
+              >
+                <div className="w-12 h-12 bg-sky-500 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Twitter className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-sm text-gray-700 font-medium">
+                  Twitter
+                </span>
+              </button>
+
+              <button
+                onClick={() => handleShare("whatsapp")}
+                className="flex flex-col items-center gap-2 p-4 border border-gray-200 rounded-lg hover:border-primary-600 hover:bg-primary-50 transition-colors group"
+              >
+                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <MessageCircle className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-sm text-gray-700 font-medium">
+                  WhatsApp
+                </span>
+              </button>
+
+              <button
+                onClick={() => handleShare("linkedin")}
+                className="flex flex-col items-center gap-2 p-4 border border-gray-200 rounded-lg hover:border-primary-600 hover:bg-primary-50 transition-colors group"
+              >
+                <div className="w-12 h-12 bg-blue-700 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Linkedin className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-sm text-gray-700 font-medium">
+                  LinkedIn
+                </span>
+              </button>
+
+              <button
+                onClick={() => handleShare("email")}
+                className="flex flex-col items-center gap-2 p-4 border border-gray-200 rounded-lg hover:border-primary-600 hover:bg-primary-50 transition-colors group"
+              >
+                <div className="w-12 h-12 bg-gray-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Mail className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-sm text-gray-700 font-medium">Email</span>
+              </button>
+
+              <button
+                onClick={() => handleShare("copy")}
+                className="flex flex-col items-center gap-2 p-4 border border-gray-200 rounded-lg hover:border-primary-600 hover:bg-primary-50 transition-colors group"
+              >
+                <div className="w-12 h-12 bg-primary-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Copy className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-sm text-gray-700 font-medium">
+                  Copy Link
+                </span>
+              </button>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-sm text-gray-600 mb-2 font-medium">
+                Property Link:
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={window.location.href}
+                  readOnly
+                  className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 outline-none"
+                />
+                <button
+                  onClick={() => handleShare("copy")}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
       )}
     </div>
   );

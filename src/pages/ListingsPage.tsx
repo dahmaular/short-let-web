@@ -12,13 +12,18 @@ import { useApp } from "../context/AppContext";
 import { useRouter } from "../utils/router";
 import { amenitiesList } from "../data/mockData";
 import type { Property, ViewMode } from "../types";
+import { config } from "../config/api";
+import { formatCurrency } from "../utils/helpers";
 
 export default function ListingsPage() {
   const { state, dispatch } = useApp();
-  const { navigate } = useRouter();
+  // const { navigate } = useRouter();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState("recommended");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [properties, setProperties] = useState<Property[]>([]);
   const [localFilters, setLocalFilters] = useState({
     priceRange: [0, 1000] as [number, number],
     propertyTypes: [] as string[],
@@ -30,63 +35,118 @@ export default function ListingsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
 
+  // Fetch properties from API with filters
   useEffect(() => {
-    // Apply filters
-    let filtered = [...state.properties];
+    const fetchProperties = async () => {
+      try {
+        setLoading(true);
+        setError("");
 
-    // Price filter
-    filtered = filtered.filter(
-      (p) =>
-        p.price >= localFilters.priceRange[0] &&
-        p.price <= localFilters.priceRange[1]
-    );
+        // Build query parameters
+        const params = new URLSearchParams();
 
-    // Property type filter
-    if (localFilters.propertyTypes.length > 0) {
+        // Price range
+        if (localFilters.priceRange[0] > 0) {
+          params.append("minPrice", localFilters.priceRange[0].toString());
+        }
+        if (localFilters.priceRange[1] < 1000) {
+          params.append("maxPrice", localFilters.priceRange[1].toString());
+        }
+
+        // Property types
+        if (localFilters.propertyTypes.length > 0) {
+          // Backend expects single type, so we'll fetch all and filter client-side if multiple types selected
+          if (localFilters.propertyTypes.length === 1) {
+            params.append("type", localFilters.propertyTypes[0]);
+          }
+        }
+
+        // Amenities
+        if (localFilters.amenities.length > 0) {
+          params.append("amenities", localFilters.amenities.join(","));
+        }
+
+        // Minimum rating
+        if (localFilters.minRating > 0) {
+          params.append("minRating", localFilters.minRating.toString());
+        }
+
+        // Location from search filters
+        if (state.searchFilters.location) {
+          params.append("city", state.searchFilters.location);
+        }
+
+        // Sorting
+        let sortParam = "-createdAt";
+        switch (sortBy) {
+          case "price-low":
+            sortParam = "price";
+            break;
+          case "price-high":
+            sortParam = "-price";
+            break;
+          case "rating":
+            sortParam = "-rating";
+            break;
+          case "recommended":
+            sortParam = "-rating";
+            break;
+        }
+        params.append("sortBy", sortParam);
+
+        // Pagination
+        params.append("limit", "100"); // Fetch more properties for better filtering
+
+        const response = await fetch(
+          `${config.apiUrl}/api/properties?${params.toString()}`
+        );
+        const data = await response.json();
+        console.log("Properties data:", data);
+
+        if (!response.ok) {
+          throw new Error(data.message || "Failed to fetch properties");
+        }
+
+        setProperties(data.properties || []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "An error occurred");
+        console.error("Error fetching properties:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProperties();
+  }, [localFilters, sortBy, state.searchFilters.location]);
+
+  // Apply client-side filters for properties that API doesn't handle
+  useEffect(() => {
+    if (properties.length === 0) {
+      dispatch({ type: "FILTER_PROPERTIES", payload: [] });
+      return;
+    }
+
+    let filtered = [...properties];
+
+    // Property type filter (client-side when multiple types selected)
+    if (localFilters.propertyTypes.length > 1) {
       filtered = filtered.filter((p) =>
         localFilters.propertyTypes.includes(p.type)
       );
     }
 
-    // Amenities filter
-    if (localFilters.amenities.length > 0) {
-      filtered = filtered.filter((p) =>
-        localFilters.amenities.every((amenity) => p.amenities.includes(amenity))
-      );
-    }
-
-    // Instant book filter
+    // Instant book filter (not supported by API)
     if (localFilters.instantBook) {
       filtered = filtered.filter((p) => p.instantBook);
     }
 
-    // Rating filter
-    if (localFilters.minRating > 0) {
-      filtered = filtered.filter((p) => p.rating >= localFilters.minRating);
-    }
-
-    // Apply sorting
-    switch (sortBy) {
-      case "price-low":
-        filtered.sort((a, b) => a.price - b.price);
-        break;
-      case "price-high":
-        filtered.sort((a, b) => b.price - a.price);
-        break;
-      case "rating":
-        filtered.sort((a, b) => b.rating - a.rating);
-        break;
-      default:
-        // Recommended - featured first, then by rating
-        filtered.sort((a, b) => {
-          if (a.featured && !b.featured) return -1;
-          if (!a.featured && b.featured) return 1;
-          return b.rating - a.rating;
-        });
-    }
-
     dispatch({ type: "FILTER_PROPERTIES", payload: filtered });
-  }, [localFilters, sortBy, state.properties, dispatch]);
+  }, [
+    properties,
+    localFilters.propertyTypes,
+    localFilters.instantBook,
+    dispatch,
+  ]);
 
   const togglePropertyType = (type: string) => {
     setLocalFilters((prev) => ({
@@ -237,8 +297,8 @@ export default function ListingsPage() {
                     className="w-full"
                   />
                   <div className="flex justify-between text-sm text-gray-600">
-                    <span>₦{localFilters.priceRange[0]}</span>
-                    <span>₦{localFilters.priceRange[1]}+</span>
+                    <span>{formatCurrency(localFilters.priceRange[0])}</span>
+                    <span>{formatCurrency(localFilters.priceRange[1])}+</span>
                   </div>
                 </div>
               </div>
@@ -346,7 +406,22 @@ export default function ListingsPage() {
 
           {/* Properties Grid/List */}
           <div className="flex-1">
-            {paginatedProperties.length === 0 ? (
+            {loading ? (
+              <div className="text-center py-20">
+                <div className="inline-block w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-gray-600 text-lg">Loading properties...</p>
+              </div>
+            ) : error ? (
+              <div className="text-center py-20">
+                <p className="text-red-600 text-lg mb-4">{error}</p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="btn-primary"
+                >
+                  Try Again
+                </button>
+              </div>
+            ) : paginatedProperties.length === 0 ? (
               <div className="text-center py-20">
                 <p className="text-gray-600 text-lg mb-4">
                   No properties found matching your criteria
@@ -427,7 +502,7 @@ function PropertyCard({
 }) {
   const { navigate } = useRouter();
   const { state, dispatch } = useApp();
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [currentImageIndex] = useState(0);
 
   if (viewMode === "list") {
     return (
@@ -510,9 +585,9 @@ function PropertyCard({
           <div className="flex items-center justify-between">
             <div>
               <span className="text-3xl font-bold text-gray-900">
-                ₦{property.price}
+                {formatCurrency(property.price)}
               </span>
-              <span className="text-gray-600"> / night</span>
+              <span className="text-gray-600"> / day</span>
             </div>
           </div>
         </div>
@@ -583,7 +658,7 @@ function PropertyCard({
         <div className="flex items-center justify-between">
           <div>
             <span className="text-2xl font-bold text-gray-900">
-              ₦{property.price}
+              {formatCurrency(property.price)}
             </span>
             <span className="text-gray-600 text-sm"> / night</span>
           </div>

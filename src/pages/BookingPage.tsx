@@ -1,33 +1,71 @@
-import { useState } from "react";
-import { CreditCard, Shield, Lock, Check } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Check, Shield } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { useRouter } from "../utils/router";
-import { calculateNights, generateBookingId } from "../utils/helpers";
+import { calculateNights, formatCurrency } from "../utils/helpers";
+import type { Property } from "../types";
+import Toast from "../components/Toast";
+import type { ToastType } from "../components/Toast";
+import { API_ENDPOINTS } from "../config/api";
 
 export default function BookingPage() {
   const { state, dispatch } = useApp();
   const { navigate } = useRouter();
   const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [property, setProperty] = useState<Property | null>(null);
+  const [processingPayment, setProcessingPayment] = useState(false);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: ToastType;
+  } | null>(null);
   const [guestDetails, setGuestDetails] = useState({
     firstName: state.currentUser?.firstName || "",
     lastName: state.currentUser?.lastName || "",
     email: state.currentUser?.email || "",
     phone: "",
   });
-  const [paymentMethod, setPaymentMethod] = useState("credit-card");
-  const [cardDetails, setCardDetails] = useState({
-    number: "",
-    name: "",
-    expiry: "",
-    cvv: "",
-  });
 
   const booking = state.currentBooking;
-  const property = booking?.propertyId
-    ? state.properties.find((p) => p.id === booking.propertyId)
-    : null;
 
-  if (!booking || !property) {
+  // Fetch property details from API
+  useEffect(() => {
+    const fetchProperty = async () => {
+      if (!booking?.propertyId) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError("");
+
+        const response = await fetch(
+          API_ENDPOINTS.propertyById(booking.propertyId)
+        );
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || "Failed to fetch property");
+        }
+
+        setProperty(data.property);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "An error occurred");
+        console.error("Error fetching property:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProperty();
+  }, [booking?.propertyId]);
+
+  // console.log("Current Booking:", booking);
+  // console.log("Property Details:", property);
+
+  if (!booking) {
     return (
       <div className="min-h-screen flex items-center justify-center pt-20">
         <div className="text-center">
@@ -42,36 +80,191 @@ export default function BookingPage() {
     );
   }
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center pt-20">
+        <div className="text-center">
+          <div className="inline-block w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <p className="text-gray-600 text-lg">Loading booking details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !property) {
+    return (
+      <div className="min-h-screen flex items-center justify-center pt-20">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">
+            {error || "Property not found"}
+          </h2>
+          <button onClick={() => navigate("listings")} className="btn-primary">
+            Browse Properties
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const nights =
     booking.checkIn && booking.checkOut
       ? calculateNights(booking.checkIn, booking.checkOut)
       : 0;
 
+  // Calculate fresh pricing - always based on current property price
   const subtotal = property.price * nights;
   const serviceFee = Math.round(subtotal * 0.14);
   const cleaningFee = 75;
   const total = subtotal + serviceFee + cleaningFee;
 
-  const handleSubmit = () => {
-    const newBooking = {
-      id: generateBookingId(),
-      propertyId: property.id,
-      userId: state.currentUser?.id || "guest",
-      checkIn: booking.checkIn!,
-      checkOut: booking.checkOut!,
-      guests: booking.guests!,
-      totalPrice: total,
-      status: "confirmed" as const,
-      createdAt: new Date().toISOString(),
-      guestDetails,
-    };
+  console.log("Booking Calculation:", {
+    propertyPrice: property.price,
+    nights,
+    subtotal,
+    serviceFee,
+    cleaningFee,
+    total,
+  });
 
-    dispatch({ type: "ADD_BOOKING", payload: newBooking });
-    dispatch({
-      type: "SET_CURRENT_BOOKING",
-      payload: { ...booking, id: newBooking.id },
-    });
-    navigate("confirmation");
+  const handleSubmit = async () => {
+    console.log("Submitting booking with guest details:", guestDetails);
+    if (!state.currentUser) {
+      setToast({
+        message: "Please login to complete booking",
+        type: "error",
+      });
+      return;
+    }
+
+    try {
+      setProcessingPayment(true);
+
+      console.log(
+        "Submitting booking with guest details:",
+        JSON.stringify({
+          propertyId: property.id,
+          checkIn: booking.checkIn,
+          checkOut: booking.checkOut,
+          guests: booking.guests,
+          guestDetails: {
+            firstName: guestDetails.firstName,
+            lastName: guestDetails.lastName,
+            email: guestDetails.email,
+            phone: guestDetails.phone,
+          },
+          pricing: {
+            basePrice: property.price,
+            nightlyRate: property.price,
+            nights: nights,
+            serviceFee: serviceFee,
+            cleaningFee: cleaningFee,
+            total: total,
+          },
+          payment: {
+            method: "card",
+          },
+        })
+      );
+      // Step 1: Create booking
+      const bookingResponse = await fetch(API_ENDPOINTS.bookings, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({
+          propertyId: property.id,
+          checkIn: booking.checkIn,
+          checkOut: booking.checkOut,
+          guests: booking.guests,
+          guestDetails: {
+            firstName: guestDetails.firstName,
+            lastName: guestDetails.lastName,
+            email: guestDetails.email,
+            phone: guestDetails.phone,
+          },
+          pricing: {
+            pricePerNight: property.price,
+            nights: nights,
+            subtotal: subtotal,
+            serviceFee: serviceFee,
+            cleaningFee: cleaningFee,
+            total: total,
+          },
+        }),
+      });
+
+      const bookingData = await bookingResponse.json();
+      console.log("Booking Data", bookingData);
+
+      if (!bookingResponse.ok) {
+        throw new Error(bookingData.message || "Failed to create booking");
+      }
+
+      console.log("Booking created:", bookingData.booking);
+      console.log(
+        "Callback Url:",
+        `${window.location.origin}/#/confirmation?reference=${bookingData.booking._id}`
+      );
+
+      // Step 2: Initialize Paystack payment
+      const paymentResponse = await fetch(API_ENDPOINTS.initializePayment, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({
+          bookingId: bookingData.booking._id,
+          callbackUrl: `${window.location.origin}/#/confirmation`,
+        }),
+      });
+
+      const paymentData = await paymentResponse.json();
+      console.log("Payment", paymentData);
+
+      if (!paymentResponse.ok) {
+        console.log("Payment error data:", paymentData);
+        throw new Error(paymentData.message || "Failed to initialize payment");
+      }
+
+      console.log("Payment initialized:", paymentData);
+
+      // Save booking info to context
+      dispatch({
+        type: "ADD_BOOKING",
+        payload: {
+          id: bookingData.booking._id,
+          propertyId: property.id,
+          userId: state.currentUser.id,
+          checkIn: booking.checkIn!,
+          checkOut: booking.checkOut!,
+          guests: booking.guests!,
+          totalPrice: total,
+          status: "pending" as const,
+          createdAt: new Date().toISOString(),
+          guestDetails,
+        },
+      });
+
+      // Clear current booking to prevent accumulation on next booking
+      dispatch({
+        type: "SET_CURRENT_BOOKING",
+        payload: null,
+      });
+
+      // Step 3: Redirect to Paystack checkout
+      window.location.href = paymentData.authorizationUrl;
+    } catch (err) {
+      console.error("Booking error:", err);
+      setToast({
+        message:
+          err instanceof Error ? err.message : "Failed to process booking",
+        type: "error",
+      });
+    } finally {
+      setProcessingPayment(false);
+    }
   };
 
   return (
@@ -80,7 +273,7 @@ export default function BookingPage() {
         {/* Progress Steps */}
         <div className="mb-12">
           <div className="flex items-center justify-center gap-4">
-            {[1, 2, 3].map((num) => (
+            {[1, 2].map((num) => (
               <div key={num} className="flex items-center">
                 <div
                   className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all ${
@@ -91,7 +284,7 @@ export default function BookingPage() {
                 >
                   {step > num ? <Check className="w-5 h-5" /> : num}
                 </div>
-                {num < 3 && (
+                {num < 2 && (
                   <div
                     className={`w-24 h-1 mx-2 ${
                       step > num ? "bg-primary-600" : "bg-gray-200"
@@ -101,7 +294,7 @@ export default function BookingPage() {
               </div>
             ))}
           </div>
-          <div className="flex justify-between max-w-md mx-auto mt-3">
+          <div className="flex justify-between max-w-xs mx-auto mt-3">
             <span
               className={`text-sm ${
                 step >= 1 ? "text-primary-600 font-semibold" : "text-gray-500"
@@ -114,14 +307,7 @@ export default function BookingPage() {
                 step >= 2 ? "text-primary-600 font-semibold" : "text-gray-500"
               }`}
             >
-              Payment
-            </span>
-            <span
-              className={`text-sm ${
-                step >= 3 ? "text-primary-600 font-semibold" : "text-gray-500"
-              }`}
-            >
-              Review
+              Review & Pay
             </span>
           </div>
         </div>
@@ -235,171 +421,13 @@ export default function BookingPage() {
                   }
                   className="w-full btn-primary mt-8 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Continue to Payment
+                  Review Booking
                 </button>
               </div>
             )}
 
-            {/* Step 2: Payment */}
+            {/* Step 2: Review & Confirm */}
             {step === 2 && (
-              <div className="bg-white rounded-2xl p-8 shadow-md animate-fade-in">
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">
-                  Payment Method
-                </h2>
-
-                {/* Payment Method Selection */}
-                <div className="space-y-3 mb-6">
-                  <label className="flex items-center gap-3 p-4 border-2 border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                    <input
-                      type="radio"
-                      name="payment"
-                      value="credit-card"
-                      checked={paymentMethod === "credit-card"}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
-                      className="w-4 h-4"
-                    />
-                    <CreditCard className="w-5 h-5 text-gray-600" />
-                    <span className="font-semibold">Credit or Debit Card</span>
-                  </label>
-
-                  <label className="flex items-center gap-3 p-4 border-2 border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
-                    <input
-                      type="radio"
-                      name="payment"
-                      value="paypal"
-                      checked={paymentMethod === "paypal"}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
-                      className="w-4 h-4"
-                    />
-                    <div className="w-5 h-5 bg-blue-600 rounded-sm flex items-center justify-center text-white text-xs font-bold">
-                      P
-                    </div>
-                    <span className="font-semibold">PayPal</span>
-                  </label>
-                </div>
-
-                {/* Card Details */}
-                {paymentMethod === "credit-card" && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Card Number
-                      </label>
-                      <input
-                        type="text"
-                        value={cardDetails.number}
-                        onChange={(e) =>
-                          setCardDetails({
-                            ...cardDetails,
-                            number: e.target.value,
-                          })
-                        }
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent outline-none"
-                        placeholder="1234 5678 9012 3456"
-                        maxLength={19}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-700 mb-2">
-                        Cardholder Name
-                      </label>
-                      <input
-                        type="text"
-                        value={cardDetails.name}
-                        onChange={(e) =>
-                          setCardDetails({
-                            ...cardDetails,
-                            name: e.target.value,
-                          })
-                        }
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent outline-none"
-                        placeholder="John Doe"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          Expiry Date
-                        </label>
-                        <input
-                          type="text"
-                          value={cardDetails.expiry}
-                          onChange={(e) =>
-                            setCardDetails({
-                              ...cardDetails,
-                              expiry: e.target.value,
-                            })
-                          }
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent outline-none"
-                          placeholder="MM/YY"
-                          maxLength={5}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          CVV
-                        </label>
-                        <input
-                          type="text"
-                          value={cardDetails.cvv}
-                          onChange={(e) =>
-                            setCardDetails({
-                              ...cardDetails,
-                              cvv: e.target.value,
-                            })
-                          }
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-600 focus:border-transparent outline-none"
-                          placeholder="123"
-                          maxLength={4}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mt-6">
-                  <div className="flex items-start gap-3">
-                    <Lock className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <h4 className="font-semibold text-green-900 mb-1">
-                        Secure Payment
-                      </h4>
-                      <p className="text-sm text-green-700">
-                        Your payment information is encrypted and secure. We
-                        never store your card details.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-4 mt-8">
-                  <button
-                    onClick={() => setStep(1)}
-                    className="flex-1 btn-secondary"
-                  >
-                    Back
-                  </button>
-                  <button
-                    onClick={() => setStep(3)}
-                    disabled={
-                      paymentMethod === "credit-card" &&
-                      (!cardDetails.number ||
-                        !cardDetails.name ||
-                        !cardDetails.expiry ||
-                        !cardDetails.cvv)
-                    }
-                    className="flex-1 btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Review Booking
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Step 3: Review & Confirm */}
-            {step === 3 && (
               <div className="bg-white rounded-2xl p-8 shadow-md animate-fade-in">
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">
                   Review Your Booking
@@ -465,13 +493,25 @@ export default function BookingPage() {
 
                 <div className="flex gap-4 mt-8">
                   <button
-                    onClick={() => setStep(2)}
+                    onClick={() => setStep(1)}
                     className="flex-1 btn-secondary"
+                    disabled={processingPayment}
                   >
                     Back
                   </button>
-                  <button onClick={handleSubmit} className="flex-1 btn-primary">
-                    Confirm and Pay
+                  <button
+                    onClick={handleSubmit}
+                    disabled={processingPayment}
+                    className="flex-1 btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {processingPayment ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Processing...
+                      </span>
+                    ) : (
+                      "Confirm and Pay"
+                    )}
                   </button>
                 </div>
               </div>
@@ -504,27 +544,42 @@ export default function BookingPage() {
               <div className="space-y-2 text-sm border-t border-gray-200 pt-4">
                 <div className="flex justify-between">
                   <span className="text-gray-600">
-                    ₦{property.price} x {nights} nights
+                    {formatCurrency(property.price)} x {nights} nights
                   </span>
-                  <span className="text-gray-900">₦{subtotal}</span>
+                  <span className="text-gray-900">
+                    {formatCurrency(subtotal)}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Service fee</span>
-                  <span className="text-gray-900">₦{serviceFee}</span>
+                  <span className="text-gray-900">
+                    {formatCurrency(serviceFee)}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Cleaning fee</span>
-                  <span className="text-gray-900">${cleaningFee}</span>
+                  <span className="text-gray-900">
+                    {formatCurrency(cleaningFee)}
+                  </span>
                 </div>
                 <div className="border-t border-gray-200 pt-2 mt-2 flex justify-between font-semibold text-base">
-                  <span>Total (USD)</span>
-                  <span>${total}</span>
+                  <span>Total (NGN)</span>
+                  <span>{formatCurrency(total)}</span>
                 </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }

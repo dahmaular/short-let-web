@@ -1,4 +1,5 @@
 import { Facebook, Instagram, Twitter, Globe } from "lucide-react";
+import Logo from "./Logo";
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -6,6 +7,15 @@ export default function Footer() {
   return (
     <footer className="bg-gray-50 border-t border-gray-200 mt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {/* Logo Section */}
+        <div className="mb-8 pb-8 border-b border-gray-200">
+          <Logo className="mb-3" />
+          <p className="text-gray-600 text-sm max-w-md">
+            Your premier destination for luxury short-term apartment rentals.
+            Experience comfort, style, and convenience in the heart of Lagos.
+          </p>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Company */}
           <div>

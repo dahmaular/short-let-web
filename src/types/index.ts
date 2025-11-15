@@ -33,6 +33,7 @@ export interface Property {
   houseRules: string[];
   unavailableDates: string[];
   featured?: boolean;
+  reviews?: Review[];
 }
 
 export interface Review {
@@ -78,6 +79,7 @@ export interface Booking {
 
 export interface User {
   id: string;
+  username: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -106,4 +108,4 @@ export interface SortOption {
 
 export type ViewMode = 'grid' | 'list';
 
-export type Page = 'home' | 'listings' | 'property' | 'booking' | 'confirmation' | 'dashboard' | 'host';
+export type Page = 'home' | 'listings' | 'property' | 'booking' | 'confirmation' | 'dashboard' | 'host' | 'login' | 'signup';

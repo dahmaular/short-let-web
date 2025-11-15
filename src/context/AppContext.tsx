@@ -24,7 +24,19 @@ type AppAction =
   | { type: "ADD_BOOKING"; payload: Booking }
   | { type: "SET_CURRENT_BOOKING"; payload: Partial<Booking> | null }
   | { type: "CANCEL_BOOKING"; payload: string }
-  | { type: "SET_USER"; payload: User | null };
+  | { type: "SET_USER"; payload: User | null }
+  | { type: "LOGIN"; payload: { user: User; token: string } }
+  | { type: "LOGOUT" };
+
+// Check for stored user and token on initial load
+const getInitialUser = (): User | null => {
+  const storedUser = localStorage.getItem("user");
+  const storedToken = localStorage.getItem("token");
+  if (storedUser && storedToken) {
+    return JSON.parse(storedUser);
+  }
+  return null;
+};
 
 const initialState: AppState = {
   currentPage: "home",
@@ -33,14 +45,7 @@ const initialState: AppState = {
   filteredProperties: mockProperties,
   favorites: [],
   bookings: [],
-  currentUser: {
-    id: "user1",
-    firstName: "Guest",
-    lastName: "User",
-    email: "guest@shortlet.com",
-    verified: true,
-    isHost: false,
-  },
+  currentUser: getInitialUser(),
   searchFilters: {},
   currentBooking: null,
 };
@@ -80,6 +85,14 @@ function appReducer(state: AppState, action: AppAction): AppState {
       };
     case "SET_USER":
       return { ...state, currentUser: action.payload };
+    case "LOGIN":
+      localStorage.setItem("token", action.payload.token);
+      localStorage.setItem("user", JSON.stringify(action.payload.user));
+      return { ...state, currentUser: action.payload.user };
+    case "LOGOUT":
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      return { ...state, currentUser: null, favorites: [], bookings: [] };
     default:
       return state;
   }
@@ -89,6 +102,8 @@ const AppContext = createContext<
   | {
       state: AppState;
       dispatch: React.Dispatch<AppAction>;
+      login: (user: User, token: string) => void;
+      logout: () => void;
     }
   | undefined
 >(undefined);
@@ -96,8 +111,16 @@ const AppContext = createContext<
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
 
+  const login = (user: User, token: string) => {
+    dispatch({ type: "LOGIN", payload: { user, token } });
+  };
+
+  const logout = () => {
+    dispatch({ type: "LOGOUT" });
+  };
+
   return (
-    <AppContext.Provider value={{ state, dispatch }}>
+    <AppContext.Provider value={{ state, dispatch, login, logout }}>
       {children}
     </AppContext.Provider>
   );
